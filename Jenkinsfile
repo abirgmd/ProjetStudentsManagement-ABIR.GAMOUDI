@@ -10,7 +10,7 @@ pipeline {
          stage('Récupération du projet depuis GitHub') {
             steps {
                 echo 'Clonage du dépôt GitHub...'
-                git branch: 'main', url: 'https://github.com/abirgmd/ProjetStudentsManagement-ABIR.GAMOUDI.git'
+                git branch: 'master', url: 'https://github.com/abirgmd/ProjetStudentsManagement-ABIR.GAMOUDI.git'
             }
         }
 
@@ -23,4 +23,5 @@ pipeline {
 
     }
 }
+
 
