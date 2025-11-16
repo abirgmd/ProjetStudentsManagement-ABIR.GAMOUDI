@@ -7,12 +7,6 @@ pipeline {
                 echo 'Hello Aboura'
             }
         }
-         stage('Récupération du projet depuis GitHub') {
-            steps {
-                echo 'Clonage du dépôt GitHub...'
-                git branch: 'master', url: 'https://github.com/abirgmd/ProjetStudentsManagement-ABIR.GAMOUDI.git'
-            }
-        }
 
         stage('Compilation et génération du livrable') {
             steps {
@@ -20,8 +14,14 @@ pipeline {
                 sh 'mvn clean package'
             }
         }
+    }
 
+    post {
+        success {
+            echo 'Pipeline terminé avec succès ! Le livrable se trouve dans target/.'
+        }
+        failure {
+            echo 'Le pipeline a échoué. Vérifie les erreurs ci-dessus.'
+        }
     }
 }
-
-
