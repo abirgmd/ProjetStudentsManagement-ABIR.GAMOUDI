@@ -1,21 +1,17 @@
 pipeline {
     agent any
 
-    tools {
-        maven 'Maven' 
-    }
-
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'master', 
+                git branch: 'master',
                     url: 'https://github.com/abirgmd/ProjetStudentsManagement-ABIR.GAMOUDI.git'
             }
         }
 
         stage('Build') {
             steps {
-                sh './mvnw clean package' 
+                sh './mvnw clean package'
             }
         }
 
