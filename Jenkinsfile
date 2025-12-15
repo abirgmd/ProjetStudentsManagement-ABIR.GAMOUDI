@@ -1,122 +1,134 @@
 pipeline {
     agent any
-  
+
+    environment {
+        DOCKER_IMAGE = 'abirgamoudi123/department-service'
+        DOCKER_TAG   = 'latest'
+    }
+
+    options {
+        timestamps()
+    }
+
     stages {
 
-        stage('Git') {
+        /* =======================
+           📥 GIT CHECKOUT
+           ======================= */
+        stage('Git Checkout') {
             steps {
-                script {
-                    git credentialsId: 'github-credentials',
-                        branch: 'master',
-                        url: 'https://github.com/abirgmd/ProjetStudentsManagement-ABIR.GAMOUDI.git'
-                }
+                echo "📥 Git Checkout"
+                git branch: 'master',
+                    url: 'https://github.com/abirgmd/ProjetStudentsManagement-ABIR.GAMOUDI.git'
             }
         }
 
-        stage('Build with Maven') {
+        /* =======================
+           🔨 MAVEN BUILD
+           ======================= */
+        stage('Clean & Build Maven') {
             steps {
-                sh 'chmod +x mvnw && ./mvnw clean install'
-            }
-        }
-        
-        stage('Run Tests') {
-            steps {
-                sh './mvnw test'
-            }
-        }
-        
-        stage('Build DockerImage') {
-            steps {
-                sh 'docker build -t abirgamoudi123/department-service:latest .'
+                echo "🔨 Maven Build"
+                sh '''
+                    chmod +x mvnw
+                    ./mvnw clean package -DskipTests
+                '''
             }
         }
 
-        stage('Push to Docker Hub') {
-            steps {
-                script {
-                    withCredentials([
-                        usernamePassword(
-                            credentialsId: 'dockerhub-credentials',
-                            usernameVariable: 'DOCKER_USERNAME',
-                            passwordVariable: 'DOCKER_PASSWORD'
-                        )
-                    ]) {
-                        sh '''
-                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
-                            docker push abirgamoudi123/department-service:latest
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Docker Compose') {
-            steps {
-                sh 'docker-compose up -d'
-            }
-        }
-
-        stage('Jacoco Static Analysis') {
-            steps {
-                junit 'target/surefire-reports/**/*.xml'
-                jacoco()
-            }
-        }
-
+        /* =======================
+           📊 SONARQUBE ANALYSIS
+           ======================= */
         stage('MVN SONARQUBE') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')
-                ]) {
+                echo "📊 SonarQube Analysis"
+                withSonarQubeEnv('SonarQube') {
                     sh '''
-                        ./mvnw sonar:sonar \
-                        -Dsonar.login=$SONAR_TOKEN \
-                        -Dsonar.host.url=http://192.168.33.10:9000
+                        ./mvnw sonar:sonar
                     '''
                 }
             }
         }
 
-        stage('Deploy to Nexus') {
+        /* =======================
+           🐳 DOCKER BUILD
+           ======================= */
+        stage('Build Docker Image') {
             steps {
-                sh './mvnw deploy'
+                echo "🐳 Docker Build"
+                sh '''
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                '''
             }
         }
 
-        stage('Prometheus') {
+        /* =======================
+           🔐 DOCKER PUSH
+           ======================= */
+        stage('Docker Login & Push') {
             steps {
-                sh 'docker start prometheus || true'
+                echo "🔐 Docker Login & Push"
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+                    sh '''
+                        export DOCKER_CLIENT_TIMEOUT=300
+                        export COMPOSE_HTTP_TIMEOUT=300
+
+                        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+                        docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
+                    '''
+                }
             }
         }
 
-        stage('Grafana') {
+        /* =======================
+           ☸️ KUBERNETES DEPLOY
+           ======================= */
+        stage('Kubernetes Deploy') {
             steps {
-                sh 'docker start grafana || true'
+                echo "☸️ Kubernetes Deploy (Minikube)"
+
+                sh '''
+                    kubectl cluster-info
+
+                    kubectl get namespace devops || kubectl create namespace devops
+
+                    kubectl apply -f mysql-deployment.yaml -n devops
+                    kubectl apply -f spring-deployment.yaml -n devops
+
+                    kubectl rollout status deployment spring-app -n devops --timeout=180s
+                '''
             }
         }
 
-        stage('Terraform') {
+        /* =======================
+           🔍 VERIFY DEPLOYMENT
+           ======================= */
+        stage('Verify Deployment') {
             steps {
-                sh 'terraform init'
-                sh 'terraform apply -auto-approve'
+                echo "🔍 Verify Deployment"
+                sh '''
+                    kubectl get pods -n devops
+                    kubectl get svc -n devops
+                    kubectl get deployments -n devops
+                '''
             }
         }
     }
-       
+
     post {
         success {
-            emailext(
-                subject: "Build Success: ${currentBuild.fullDisplayName}",
-                body: "Le pipeline a réussi. Voir les détails du build ici: ${env.BUILD_URL}",
-                to: 'abir.gamoudi@esprit.tn'
-            )
+            echo "✅ PIPELINE COMPLETED SUCCESSFULLY"
         }
         failure {
-            emailext(
-                subject: "Build Failed: ${currentBuild.fullDisplayName}",
-                body: "Le pipeline a échoué. Voir les détails du build ici: ${env.BUILD_URL}",
-                to: 'abir.gamoudi@esprit.tn'
-            )
+            echo "❌ PIPELINE FAILED"
         }
     }
 }
