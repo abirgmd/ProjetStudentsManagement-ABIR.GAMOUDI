@@ -6,6 +6,10 @@ pipeline {
         DOCKER_TAG   = 'latest'
     }
 
+    tools {
+        maven 'Maven'
+    }
+
     options {
         timestamps()
     }
@@ -27,6 +31,20 @@ pipeline {
                     chmod +x mvnw
                     ./mvnw clean package -DskipTests
                 '''
+            }
+        }
+
+        /* =======================
+           🔍 SONARQUBE ANALYSIS
+           ======================= */
+        stage('MVN SONARQUBE') {
+            steps {
+                echo "📊 SonarQube Analysis"
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        ./mvnw sonar:sonar
+                    '''
+                }
             }
         }
 
