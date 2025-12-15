@@ -24,28 +24,37 @@ pipeline {
         }
 
         /* =======================
-           🔨 MAVEN BUILD
+           🔨 MAVEN BUILD + TESTS
            ======================= */
-        stage('Clean & Build Maven') {
+        stage('Build & Test (JUnit)') {
             steps {
-                echo "🔨 Maven Build"
+                echo "🧪 Maven Build & Tests"
                 sh '''
                     chmod +x mvnw
-                    ./mvnw clean package -DskipTests
+                    ./mvnw clean test
                 '''
             }
         }
 
         /* =======================
-           📊 SONARQUBE ANALYSIS
+           📊 JACOCO COVERAGE
            ======================= */
-        stage('MVN SONARQUBE') {
+        stage('JaCoCo Coverage') {
+            steps {
+                echo "📊 JaCoCo Report"
+                sh './mvnw jacoco:report'
+                jacoco execPattern: 'target/jacoco.exec'
+            }
+        }
+
+        /* =======================
+           📊 SONARQUBE
+           ======================= */
+        stage('SonarQube Analysis') {
             steps {
                 echo "📊 SonarQube Analysis"
                 withSonarQubeEnv('SonarQube') {
-                    sh '''
-                        ./mvnw sonar:sonar
-                    '''
+                    sh './mvnw sonar:sonar'
                 }
             }
         }
@@ -53,22 +62,19 @@ pipeline {
         /* =======================
            🐳 DOCKER BUILD
            ======================= */
-        stage('Build Docker Image') {
+        stage('Docker Build') {
             steps {
                 echo "🐳 Docker Build"
-                sh '''
-                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                '''
+                sh 'docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .'
             }
         }
 
         /* =======================
            🔐 DOCKER PUSH
            ======================= */
-        stage('Docker Login & Push') {
+        stage('Docker Push') {
             steps {
-                echo "🔐 Docker Login & Push"
-
+                echo "🔐 Docker Push"
                 withCredentials([
                     usernamePassword(
                         credentialsId: 'dockerhub-credentials',
@@ -79,9 +85,7 @@ pipeline {
                     sh '''
                         export DOCKER_CLIENT_TIMEOUT=300
                         export COMPOSE_HTTP_TIMEOUT=300
-
                         echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
                         docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
                     '''
                 }
@@ -93,18 +97,48 @@ pipeline {
            ======================= */
         stage('Kubernetes Deploy') {
             steps {
-                echo "☸️ Kubernetes Deploy (Minikube)"
-
+                echo "☸️ Kubernetes Deploy"
                 sh '''
-                    kubectl cluster-info
-
                     kubectl get namespace devops || kubectl create namespace devops
-
                     kubectl apply -f mysql-deployment.yaml -n devops
                     kubectl apply -f spring-deployment.yaml -n devops
-
                     kubectl rollout status deployment spring-app -n devops --timeout=180s
                 '''
+            }
+        }
+
+        /* =======================
+           🏗️ TERRAFORM (INFRA)
+           ======================= */
+        stage('Terraform Apply') {
+            steps {
+                echo "🏗️ Infrastructure Provisioning"
+                dir('terraform') {
+                    sh '''
+                        terraform init
+                        terraform apply -auto-approve
+                    '''
+                }
+            }
+        }
+
+        /* =======================
+           📈 PROMETHEUS
+           ======================= */
+        stage('Prometheus') {
+            steps {
+                echo "📈 Start Prometheus"
+                sh 'docker start prometheus || true'
+            }
+        }
+
+        /* =======================
+           📊 GRAFANA
+           ======================= */
+        stage('Grafana') {
+            steps {
+                echo "📊 Start Grafana"
+                sh 'docker start grafana || true'
             }
         }
 
@@ -117,7 +151,6 @@ pipeline {
                 sh '''
                     kubectl get pods -n devops
                     kubectl get svc -n devops
-                    kubectl get deployments -n devops
                 '''
             }
         }
@@ -125,10 +158,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ PIPELINE COMPLETED SUCCESSFULLY"
+            echo "✅ PIPELINE ABIR CI/CD + INFRA + OBSERVABILITY SUCCESS"
         }
         failure {
-            echo "❌ PIPELINE FAILED"
+            echo "❌ PIPELINE ABIR FAILED"
         }
     }
 }
